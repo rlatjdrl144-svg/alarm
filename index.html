@@ -1,0 +1,1691 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BSR E&G - 경보회로 및 계기교정 진단 결과 보고서 시스템</title>
+    <!-- Vue 3 CDN -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome 6 CDN -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts: Noto Sans KR -->
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700;800&family=Roboto+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        navy: {
+                            50: '#f0f4f8',
+                            100: '#d9e2ec',
+                            500: '#334e68',
+                            800: '#102a43',
+                            900: '#0b1b2b',
+                        },
+                        bsr: {
+                            blue: '#004B87',
+                            dark: '#002B49',
+                            gold: '#D4AF37',
+                            light: '#F4F7FA'
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Noto Sans KR', 'sans-serif'],
+                        mono: ['Roboto Mono', 'monospace']
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            font-family: 'Noto Sans KR', sans-serif;
+            background-color: #f1f5f9;
+            color: #1e293b;
+        }
+
+        /* A4 규격 스타일링 (인쇄 & 미리보기) */
+        .a4-page {
+            width: 210mm;
+            min-height: 297mm;
+            height: 297mm;
+            padding: 12mm 15mm;
+            margin: 0 auto 15mm auto;
+            background: #ffffff;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            box-sizing: border-box;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            page-break-after: always;
+            break-after: page;
+            overflow: hidden;
+        }
+
+        /* 테이블 텍스트 촘촘한 배치 */
+        .report-table th, .report-table td {
+            border: 1px solid #334155;
+            padding: 4px 6px;
+            font-size: 11px;
+            line-height: 1.2;
+            vertical-align: middle;
+        }
+        .report-table th {
+            background-color: #f1f5f9;
+            font-weight: 700;
+            text-align: center;
+            color: #0f172a;
+        }
+
+        /* 체크박스 커스텀 */
+        .custom-checkbox {
+            display: inline-block;
+            width: 13px;
+            height: 13px;
+            border: 1.5px solid #1e293b;
+            text-align: center;
+            line-height: 11px;
+            font-size: 10px;
+            font-weight: bold;
+        }
+        .custom-checkbox.checked::after {
+            content: '✓';
+        }
+
+        /* 인쇄 설정 (@media print) */
+        @media print {
+            @page {
+                size: A4 portrait;
+                margin: 0;
+            }
+            body {
+                background: white !important;
+                padding: 0 !important;
+                margin: 0 !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
+            .no-print {
+                display: none !important;
+            }
+            .a4-page {
+                margin: 0 !important;
+                box-shadow: none !important;
+                width: 210mm !important;
+                height: 297mm !important;
+                max-height: 297mm !important;
+                page-break-after: always !important;
+                break-after: page !important;
+                border: none !important;
+            }
+            .print-container {
+                display: block !important;
+                padding: 0 !important;
+                margin: 0 !important;
+            }
+        }
+
+        /* 워터마크 효과 */
+        .watermark {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) rotate(-30deg);
+            font-size: 55px;
+            font-weight: 900;
+            color: rgba(0, 75, 135, 0.04);
+            white-space: nowrap;
+            pointer-events: none;
+            z-index: 0;
+            letter-spacing: 4px;
+        }
+
+        /* 커스텀 스크롤바 */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #94a3b8;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body>
+    <div id="app" class="min-h-screen flex flex-col">
+
+        <!-- 상단 네비게이션 (편집 모드에서만 표시) -->
+        <header class="no-print bg-slate-900 text-white shadow-md sticky top-0 z-50">
+            <div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+                <div class="flex items-center space-x-3">
+                    <div class="bg-bsr-blue text-white font-bold px-2.5 py-1 rounded text-sm tracking-wider">BSR E&G</div>
+                    <h1 class="font-bold text-lg text-slate-100 flex items-center">
+                        <i class="fa-solid fa-file-signature text-bsr-gold mr-2"></i>
+                        경보회로 & 계기교정 보고서 자동생성기
+                    </h1>
+                </div>
+
+                <!-- 탭 및 액션 버튼 -->
+                <div class="flex items-center space-x-2">
+                    <button @click="currentTab = 'edit'" :class="currentTab === 'edit' ? 'bg-bsr-blue text-white font-semibold' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'" class="px-3.5 py-1.5 rounded-lg text-sm transition flex items-center">
+                        <i class="fa-solid fa-pen-to-square mr-1.5"></i>데이터 입력/편집
+                    </button>
+                    <button @click="currentTab = 'preview'" :class="currentTab === 'preview' ? 'bg-bsr-blue text-white font-semibold' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'" class="px-3.5 py-1.5 rounded-lg text-sm transition flex items-center">
+                        <i class="fa-solid fa-eye mr-1.5"></i>A4 미리보기 (총 {{ totalPages }}P)
+                    </button>
+
+                    <div class="h-5 w-px bg-slate-700 mx-1"></div>
+
+                    <button @click="loadSampleData" class="bg-amber-600 hover:bg-amber-500 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center shadow-sm">
+                        <i class="fa-solid fa-wand-magic-sparkles mr-1"></i>구미 증기터빈 샘플 로드
+                    </button>
+                    <button @click="exportJSON" class="bg-slate-700 hover:bg-slate-600 text-slate-100 px-2.5 py-1.5 rounded-lg text-xs transition" title="JSON 백업 저장">
+                        <i class="fa-solid fa-download"></i> 백업
+                    </button>
+                    <label class="bg-slate-700 hover:bg-slate-600 text-slate-100 px-2.5 py-1.5 rounded-lg text-xs transition cursor-pointer" title="JSON 백업 불러오기">
+                        <i class="fa-solid fa-upload"></i> 복원
+                        <input type="file" @change="importJSON" accept=".json" class="hidden">
+                    </label>
+                    <button @click="triggerPrint" class="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-1.5 rounded-lg text-sm font-bold transition flex items-center shadow">
+                        <i class="fa-solid fa-print mr-1.5"></i>PDF 인쇄 / 저장
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- 메인 컨텐츠 영역 -->
+        <main class="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6">
+
+            <!-- ==================================================================== -->
+            <!-- TAB 1: 데이터 입력 & 편집 모드                                       -->
+            <!-- ==================================================================== -->
+            <div v-show="currentTab === 'edit'" class="no-print space-y-6">
+
+                <!-- 1. 기본 정보 (갑지 & 공통 헤더) 카드 -->
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+                    <div class="flex items-center justify-between pb-3 mb-4 border-b border-slate-200">
+                        <h2 class="text-base font-bold text-slate-800 flex items-center">
+                            <i class="fa-solid fa-building text-bsr-blue mr-2"></i>1. 공통 기본 정보 (갑지 및 전 페이지 자동 반영)
+                        </h2>
+                        <span class="text-xs text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full">모든 성적서 헤더/푸터에 연동됨</span>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <div class="col-span-1 md:col-span-2">
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">현장명 (발전소/시설명 1줄)</label>
+                            <input v-model="info.siteNameLine1" type="text" class="w-full text-sm p-2 border border-slate-300 rounded focus:ring-2 focus:ring-bsr-blue focus:outline-none" placeholder="예: 구미시 환경자원화시설">
+                        </div>
+                        <div class="col-span-1 md:col-span-2">
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">세부 설비명 (현장명 2줄)</label>
+                            <input v-model="info.siteNameLine2" type="text" class="w-full text-sm p-2 border border-slate-300 rounded focus:ring-2 focus:ring-bsr-blue focus:outline-none" placeholder="예: 자가용 증기터빈 발전시설">
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">설비 종류 선택</label>
+                            <select v-model="info.facilityType" @change="onFacilityTypeChange" class="w-full text-sm p-2 border border-slate-300 rounded focus:ring-2 focus:ring-bsr-blue focus:outline-none font-semibold text-bsr-blue">
+                                <option value="증기터빈 발전기">증기터빈 발전기</option>
+                                <option value="가스터빈 발전기">가스터빈 발전기</option>
+                                <option value="보일러 설비">보일러 설비</option>
+                                <option value="가스엔진 발전기">가스엔진 발전기</option>
+                                <option value="디젤 발전기">디젤 발전기</option>
+                                <option value="풍력 발전설비">풍력 발전설비</option>
+                                <option value="소각·자원회수 설비">소각·자원회수 설비</option>
+                                <option value="직접입력">직접 입력</option>
+                            </select>
+                        </div>
+                        <div v-if="info.facilityType === '직접입력'">
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">직접 입력 설비명</label>
+                            <input v-model="info.customFacilityType" type="text" class="w-full text-sm p-2 border border-slate-300 rounded focus:ring-2 focus:ring-bsr-blue focus:outline-none" placeholder="설비종류 직접 입력">
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">진단 일자</label>
+                            <input v-model="info.date" type="date" class="w-full text-sm p-2 border border-slate-300 rounded focus:ring-2 focus:ring-bsr-blue focus:outline-none">
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">시험 종별</label>
+                            <input v-model="info.testType" type="text" class="w-full text-sm p-2 border border-slate-300 rounded focus:ring-2 focus:ring-bsr-blue focus:outline-none" placeholder="정기검사를 위한 안전진단">
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">진단계측 책임자</label>
+                            <input v-model="info.leadEngineer" type="text" class="w-full text-sm p-2 border border-slate-300 rounded focus:ring-2 focus:ring-bsr-blue focus:outline-none" placeholder="(주)비에스알이앤지 안수련 대표">
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">책임 시험원</label>
+                            <input v-model="info.chiefTester" type="text" class="w-full text-sm p-2 border border-slate-300 rounded focus:ring-2 focus:ring-bsr-blue focus:outline-none" placeholder="(주)비에스알이앤지 나병국 이사">
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">현장 측정자</label>
+                            <input v-model="info.fieldTesters" type="text" class="w-full text-sm p-2 border border-slate-300 rounded focus:ring-2 focus:ring-bsr-blue focus:outline-none" placeholder="김성기, 김한진">
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">현장 확인자</label>
+                            <input v-model="info.verifier" type="text" class="w-full text-sm p-2 border border-slate-300 rounded focus:ring-2 focus:ring-bsr-blue focus:outline-none" placeholder="전기안전관리자">
+                        </div>
+
+                        <div class="col-span-1 md:col-span-4 flex items-center justify-between bg-slate-50 p-3 rounded-lg border border-slate-200 mt-2">
+                            <div class="flex items-center space-x-4">
+                                <label class="inline-flex items-center text-xs text-slate-700 cursor-pointer">
+                                    <input type="checkbox" v-model="info.showWatermark" class="rounded border-slate-300 text-bsr-blue focus:ring-bsr-blue mr-1.5">
+                                    A4 워터마크 표시 ((주)비에스알이앤지)
+                                </label>
+                            </div>
+                            <span class="text-xs text-slate-500">포맷: <b>{{ formattedDateFull }}</b> (성적서 헤더: {{ formattedDateDot }})</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 2. 1. 설비 점검 결과서 편집 -->
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+                    <div class="flex items-center justify-between pb-3 mb-4 border-b border-slate-200">
+                        <h2 class="text-base font-bold text-slate-800 flex items-center">
+                            <i class="fa-solid fa-clipboard-check text-bsr-blue mr-2"></i>2. 설비 점검 결과서 (8개 기본 점검 항목 & 종합 소견)
+                        </h2>
+                        <button @click="addCheckItem" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1 rounded text-xs font-semibold transition">
+                            <i class="fa-solid fa-plus mr-1"></i>항목 추가
+                        </button>
+                    </div>
+
+                    <div class="space-y-2 mb-4">
+                        <div v-for="(item, idx) in checkItems" :key="idx" class="flex items-center space-x-2 bg-slate-50 p-2 rounded border border-slate-200 text-xs">
+                            <span class="w-6 text-center font-bold text-slate-500">{{ idx + 1 }}</span>
+                            <input v-model="item.name" type="text" class="flex-1 p-1.5 border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-bsr-blue" placeholder="점검 항목명">
+                            <select v-model="item.result" class="w-24 p-1.5 border border-slate-300 rounded font-semibold text-center" :class="item.result === '양호' ? 'text-emerald-700 bg-emerald-50' : 'text-red-700 bg-red-50'">
+                                <option value="양호">양호</option>
+                                <option value="불량">불량</option>
+                                <option value="해당없음">해당없음</option>
+                            </select>
+                            <input v-model="item.note" type="text" class="w-32 p-1.5 border border-slate-300 rounded focus:outline-none" placeholder="비고">
+                            <button @click="removeCheckItem(idx)" class="text-rose-500 hover:text-rose-700 p-1">
+                                <i class="fa-solid fa-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 mb-1">※ 기타 특기사항 및 소견 문구 (엔터 구분)</label>
+                        <textarea v-model="inspectionNotes" rows="4" class="w-full text-xs p-2.5 border border-slate-300 rounded focus:ring-2 focus:ring-bsr-blue focus:outline-none font-mono"></textarea>
+                    </div>
+                </div>
+
+                <!-- 3. 2. 경보회로 성적서 편집 -->
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+                    <div class="flex flex-wrap items-center justify-between gap-2 pb-3 mb-4 border-b border-slate-200">
+                        <h2 class="text-base font-bold text-slate-800 flex items-center">
+                            <i class="fa-solid fa-bell text-bsr-blue mr-2"></i>3. 경보회로 시험성적서 (총 {{ alarmRows.length }}개 항목)
+                        </h2>
+                        <div class="flex items-center space-x-2">
+                            <button @click="syncToCalibration" class="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1 rounded text-xs font-semibold transition shadow-sm">
+                                <i class="fa-solid fa-arrows-rotate mr-1"></i>[온도/진동] 계기교정 성적서로 동동 일괄 생성
+                            </button>
+                            <button @click="syncToSwitches" class="bg-sky-600 hover:bg-sky-500 text-white px-3 py-1 rounded text-xs font-semibold transition shadow-sm">
+                                <i class="fa-solid fa-toggle-on mr-1"></i>[스위치류(PS/TS 등)] 점검기록표 동동 생성
+                            </button>
+                            <button @click="addAlarmRow" class="bg-bsr-blue hover:bg-blue-700 text-white px-3 py-1 rounded text-xs font-semibold transition shadow-sm">
+                                <i class="fa-solid fa-plus mr-1"></i>경보 항목 추가
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 경보회로 리스트 테이블 -->
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-xs text-left border-collapse border border-slate-200">
+                            <thead class="bg-slate-100 text-slate-700">
+                                <tr>
+                                    <th class="p-2 border text-center w-10">No</th>
+                                    <th class="p-2 border">항목 (Name)</th>
+                                    <th class="p-2 border w-28">기기번호 (Tag No)</th>
+                                    <th class="p-2 border w-20">단위</th>
+                                    <th class="p-2 border w-36">Interlock 구분</th>
+                                    <th class="p-2 border w-28">설계값</th>
+                                    <th class="p-2 border w-28">실측값 (자동입력)</th>
+                                    <th class="p-2 border w-20 text-center">결과</th>
+                                    <th class="p-2 border w-28">비고</th>
+                                    <th class="p-2 border text-center w-12">삭제</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr v-for="(row, idx) in alarmRows" :key="idx" class="hover:bg-slate-50">
+                                    <td class="p-1.5 border text-center font-bold text-slate-500">{{ idx + 1 }}</td>
+                                    <td class="p-1.5 border">
+                                        <input v-model="row.name" type="text" class="w-full p-1 border rounded focus:outline-none" placeholder="항목명">
+                                    </td>
+                                    <td class="p-1.5 border">
+                                        <input v-model="row.tagNo" type="text" class="w-full p-1 border rounded font-mono focus:outline-none" placeholder="Tag No">
+                                    </td>
+                                    <td class="p-1.5 border">
+                                        <input v-model="row.unit" type="text" class="w-full p-1 border rounded focus:outline-none text-center" placeholder="℃, kg/cm²">
+                                    </td>
+                                    <td class="p-1.5 border">
+                                        <textarea v-model="row.interlock" rows="2" class="w-full p-1 border rounded focus:outline-none font-mono text-xs" placeholder="H Alarm&#10;HH Trip"></textarea>
+                                    </td>
+                                    <td class="p-1.5 border">
+                                        <textarea v-model="row.setValue" @input="onAlarmSetValueChange(row)" rows="2" class="w-full p-1 border rounded focus:outline-none text-right font-mono" placeholder="95&#10;100"></textarea>
+                                    </td>
+                                    <td class="p-1.5 border">
+                                        <textarea v-model="row.actValue" rows="2" class="w-full p-1 border rounded focus:outline-none text-right font-mono bg-amber-50/40" placeholder="실측값"></textarea>
+                                    </td>
+                                    <td class="p-1.5 border text-center">
+                                        <select v-model="row.result" class="w-full p-1 border rounded text-center font-bold" :class="row.result.includes('불') ? 'text-red-600' : 'text-emerald-700'">
+                                            <option value="양호">양호</option>
+                                            <option value="양호&#10;양호">양호 (2줄)</option>
+                                            <option value="양호&#10;양호&#10;양호&#10;양호">양호 (4줄)</option>
+                                            <option value="불량">불량</option>
+                                        </select>
+                                    </td>
+                                    <td class="p-1.5 border">
+                                        <input v-model="row.note" type="text" class="w-full p-1 border rounded focus:outline-none" placeholder="비고">
+                                    </td>
+                                    <td class="p-1.5 border text-center">
+                                        <button @click="removeAlarmRow(idx)" class="text-rose-500 hover:text-rose-700 p-1">
+                                            <i class="fa-solid fa-trash"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- 4. 3. 계기교정 시험성적서 편집 -->
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+                    <div class="flex items-center justify-between pb-3 mb-4 border-b border-slate-200">
+                        <h2 class="text-base font-bold text-slate-800 flex items-center">
+                            <i class="fa-solid fa-sliders text-bsr-blue mr-2"></i>4. 계기교정 성적서 설정 (자동 물리 엑셀 수식 연산 지원)
+                        </h2>
+                        <button @click="addCalibItem" class="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1 rounded text-xs font-semibold transition">
+                            <i class="fa-solid fa-plus mr-1"></i>교정 기기 추가
+                        </button>
+                    </div>
+
+                    <div class="bg-indigo-50 border border-indigo-200 text-indigo-900 rounded-lg p-3 text-xs mb-4">
+                        <i class="fa-solid fa-circle-info text-indigo-600 mr-1.5"></i>
+                        <b>자동 연산 규칙:</b> 센서 종류와 Range(Min~Max)를 지정하고 <b>[교정전 오차 Offset]</b>(예: 0.6, -1.2, 1.5 등)을 입력하면 
+                        0%, 25%, 50%, 75%, 100% 기준 입력값(Pt100/K-Type/mV/mA)과 교정전/교정후 출력값이 <b>엑셀 수식 공식에 따라 자동 계산</b>됩니다.
+                    </div>
+
+                    <div class="space-y-4">
+                        <div v-for="(cal, cIdx) in calibItems" :key="cIdx" class="bg-slate-50 border border-slate-200 rounded-lg p-4 relative">
+                            <button @click="removeCalibItem(cIdx)" class="absolute top-3 right-3 text-rose-500 hover:text-rose-700 text-xs font-semibold">
+                                <i class="fa-solid fa-trash mr-1"></i>기기 삭제
+                            </button>
+
+                            <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-3">
+                                <div class="lg:col-span-2">
+                                    <label class="block text-[11px] font-semibold text-slate-600 mb-1">명칭 및 Tag No</label>
+                                    <input v-model="cal.nameTag" type="text" class="w-full text-xs p-1.5 border rounded focus:ring-1 focus:ring-indigo-500" placeholder="Inlet Steam Temperature (TT-102)">
+                                </div>
+
+                                <div>
+                                    <label class="block text-[11px] font-semibold text-slate-600 mb-1">센서 종류</label>
+                                    <select v-model="cal.sensorType" @change="recalculateCalib(cal)" class="w-full text-xs p-1.5 border rounded font-semibold text-indigo-700">
+                                        <option value="RTD_PT100">RTD (Pt100 IEC60751)</option>
+                                        <option value="RTD_JPT100">RTD (JPt100 JIS)</option>
+                                        <option value="TC_K">Thermo Couple (K-Type)</option>
+                                        <option value="TC_J">Thermo Couple (J-Type)</option>
+                                        <option value="TRANS_420">Transmitter (4~20mA)</option>
+                                        <option value="TRANS_15V">Transmitter (1~5V)</option>
+                                    </select>
+                                </div>
+
+                                <div>
+                                    <label class="block text-[11px] font-semibold text-slate-600 mb-1">Range (Min ~ Max)</label>
+                                    <div class="flex items-center space-x-1">
+                                        <input v-model.number="cal.rangeMin" @input="recalculateCalib(cal)" type="number" class="w-full text-xs p-1.5 border rounded text-right font-mono" placeholder="0">
+                                        <span class="text-slate-400">~</span>
+                                        <input v-model.number="cal.rangeMax" @input="recalculateCalib(cal)" type="number" class="w-full text-xs p-1.5 border rounded text-right font-mono" placeholder="600">
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label class="block text-[11px] font-semibold text-slate-600 mb-1">출력 단위</label>
+                                    <input v-model="cal.unit" @input="recalculateCalib(cal)" type="text" class="w-full text-xs p-1.5 border rounded text-center" placeholder="℃, mm/s">
+                                </div>
+
+                                <div>
+                                    <label class="block text-[11px] font-semibold text-slate-600 mb-1">교정전 오차 (Offset, +/-)</label>
+                                    <input v-model.number="cal.offset" @input="recalculateCalib(cal)" type="number" step="0.1" class="w-full text-xs p-1.5 border border-indigo-300 rounded text-right font-bold text-amber-600 bg-amber-50" placeholder="+0.6 또는 -1.2">
+                                </div>
+                            </div>
+
+                            <!-- 5포인트 미리보기/수정 테이블 -->
+                            <div class="overflow-x-auto bg-white rounded border border-slate-200">
+                                <table class="w-full text-[11px] text-center border-collapse">
+                                    <thead class="bg-slate-100 text-slate-700 font-semibold">
+                                        <tr>
+                                            <th class="p-1 border w-12">%</th>
+                                            <th class="p-1 border">기준 입력값 (계산)</th>
+                                            <th class="p-1 border">기준 출력값</th>
+                                            <th class="p-1 border bg-amber-50 text-amber-900">교정 전 입력값</th>
+                                            <th class="p-1 border bg-amber-50 text-amber-900">교정 전 출력값 (오차적용)</th>
+                                            <th class="p-1 border bg-emerald-50 text-emerald-900">교정 후 입력값</th>
+                                            <th class="p-1 border bg-emerald-50 text-emerald-900">교정 후 출력값 (기준동일)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="font-mono">
+                                        <tr v-for="(p, pIdx) in cal.points" :key="pIdx">
+                                            <td class="p-1 border font-bold text-slate-600">{{ p.pct }}%</td>
+                                            <td class="p-1 border text-indigo-700 font-semibold">{{ p.refIn }}</td>
+                                            <td class="p-1 border">{{ p.refOut }} {{ cal.unit }}</td>
+                                            <td class="p-1 border bg-amber-50/50">{{ p.preIn }}</td>
+                                            <td class="p-1 border bg-amber-50/50 text-amber-700 font-bold">
+                                                <input v-model="p.preOut" type="text" class="w-full text-center border-none bg-transparent focus:ring-0">
+                                            </td>
+                                            <td class="p-1 border bg-emerald-50/50">{{ p.postIn }}</td>
+                                            <td class="p-1 border bg-emerald-50/50 text-emerald-700 font-bold">{{ p.postOut }} {{ cal.unit }}</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 5. 4. 스위치류 점검기록표 (CHECK SHEET) 편집 -->
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+                    <div class="flex items-center justify-between pb-3 mb-4 border-b border-slate-200">
+                        <h2 class="text-base font-bold text-slate-800 flex items-center">
+                            <i class="fa-solid fa-toggle-on text-bsr-blue mr-2"></i>5. 스위치류 점검기록표 (1스위치 = 1 A4 페이지, 총 {{ switchItems.length }}대)
+                        </h2>
+                        <button @click="addSwitchItem" class="bg-sky-600 hover:bg-sky-500 text-white px-3 py-1 rounded text-xs font-semibold transition">
+                            <i class="fa-solid fa-plus mr-1"></i>스위치 추가
+                        </button>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div v-for="(sw, swIdx) in switchItems" :key="swIdx" class="bg-slate-50 border border-slate-200 rounded-lg p-4 relative space-y-3">
+                            <button @click="removeSwitchItem(swIdx)" class="absolute top-3 right-3 text-rose-500 hover:text-rose-700 text-xs font-semibold">
+                                <i class="fa-solid fa-trash mr-1"></i>삭제
+                            </button>
+
+                            <div class="flex items-center space-x-2 font-bold text-xs text-bsr-blue">
+                                <span>No. {{ swIdx + 1 }}</span>
+                                <input v-model="sw.tagNo" type="text" class="p-1 border rounded font-mono w-28 text-slate-800" placeholder="Tag No (PS-202)">
+                            </div>
+
+                            <div class="grid grid-cols-2 gap-2 text-xs">
+                                <div>
+                                    <label class="block text-[11px] text-slate-500">기기명</label>
+                                    <input v-model="sw.name" type="text" class="w-full p-1 border rounded" placeholder="Lube Oil Pressure Alarm">
+                                </div>
+                                <div>
+                                    <label class="block text-[11px] text-slate-500">계기구분 / 형식</label>
+                                    <input v-model="sw.type" type="text" class="w-full p-1 border rounded" placeholder="압력스위치 / Pressure Switch">
+                                </div>
+                                <div>
+                                    <label class="block text-[11px] text-slate-500">Range</label>
+                                    <input v-model="sw.range" type="text" class="w-full p-1 border rounded" placeholder="0.2kg/cm²~2kg/cm²">
+                                </div>
+                                <div>
+                                    <label class="block text-[11px] text-slate-500">설치 위치 / 제조사</label>
+                                    <input v-model="sw.location" type="text" class="w-full p-1 border rounded" placeholder="Turbine / Switzer">
+                                </div>
+                            </div>
+
+                            <!-- 시험 및 교정 데이터 -->
+                            <div class="bg-white p-2 rounded border border-slate-200 text-xs grid grid-cols-4 gap-2">
+                                <div>
+                                    <label class="block text-[10px] text-slate-500">설계 SET Value</label>
+                                    <input v-model="sw.setVal" @input="onSwitchSetValChange(sw)" type="text" class="w-full p-1 border rounded font-mono text-center font-bold" placeholder="1.4">
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] text-slate-500">동작 방향</label>
+                                    <select v-model="sw.dir" class="w-full p-1 border rounded text-center">
+                                        <option value="↓">↓ 감소</option>
+                                        <option value="↑">↑ 증가</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] text-slate-500">단위</label>
+                                    <input v-model="sw.unit" type="text" class="w-full p-1 border rounded text-center" placeholder="kg/cm²">
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] text-slate-500">교정 전 Set</label>
+                                    <input v-model="sw.preSet" type="text" class="w-full p-1 border rounded font-mono text-center text-amber-700 bg-amber-50" placeholder="1.41">
+                                </div>
+                            </div>
+
+                            <div class="grid grid-cols-2 gap-2 text-xs">
+                                <div class="flex items-center space-x-2">
+                                    <span class="text-slate-500 text-[11px]">사용 접점:</span>
+                                    <label class="inline-flex items-center"><input type="radio" :name="'contact_'+swIdx" value="NO" v-model="sw.contact" class="mr-1"> NO</label>
+                                    <label class="inline-flex items-center"><input type="radio" :name="'contact_'+swIdx" value="NC" v-model="sw.contact" class="mr-1"> NC</label>
+                                </div>
+                                <div class="flex items-center space-x-1">
+                                    <span class="text-slate-500 text-[11px]">접촉저항:</span>
+                                    <input v-model="sw.resistance" type="text" class="w-16 p-1 border rounded text-center font-mono" placeholder="0.1 [Ω]">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- ==================================================================== -->
+            <!-- TAB 2 & media print: A4 보고서 미리보기 및 실제 출력 레포트              -->
+            <!-- ==================================================================== -->
+            <div v-show="currentTab === 'preview' || isPrinting" class="print-container">
+
+                <!-- ---------------------------------------------------------------- -->
+                <!-- PAGE 1: 표지 (Cover Page)                                       -->
+                <!-- ---------------------------------------------------------------- -->
+                <div class="a4-page">
+                    <div v-if="info.showWatermark" class="watermark">(주)비에스알이앤지</div>
+
+                    <!-- 표지 상단 로고 -->
+                    <div class="flex justify-between items-center border-b-2 border-bsr-blue pb-4">
+                        <div class="flex items-center space-x-3">
+                            <div class="bg-bsr-blue text-white font-extrabold text-xl px-3 py-1.5 rounded tracking-widest">BSR</div>
+                            <div>
+                                <div class="font-bold text-slate-900 text-sm tracking-wider">(주)비에스알이앤지</div>
+                                <div class="text-[10px] text-slate-500 tracking-tight">BSR ENGINEERING CO., LTD.</div>
+                            </div>
+                        </div>
+                        <div class="text-right text-[11px] text-slate-500">
+                            <div>안전진단 전문기관</div>
+                            <div class="font-mono text-[10px]">Doc No: BSR-{{ formattedDateCompact }}-01</div>
+                        </div>
+                    </div>
+
+                    <!-- 표지 메인 타이틀 -->
+                    <div class="my-auto text-center py-12 px-4">
+                        <div class="inline-block bg-slate-100 text-bsr-blue text-xs font-extrabold px-4 py-1.5 rounded-full mb-6 tracking-wider border border-slate-200">
+                            {{ info.siteNameLine1 }}
+                        </div>
+                        
+                        <h1 class="text-3xl md:text-4xl font-black text-slate-900 leading-tight mb-4 tracking-tight">
+                            {{ info.siteNameLine2 }}
+                        </h1>
+                        
+                        <div class="text-xl md:text-2xl font-extrabold text-bsr-blue tracking-wide mb-8 border-b-2 border-bsr-gold inline-block pb-2">
+                            {{ displayFacilityType }} 경보회로·계기교정 진단 결과 보고서
+                        </div>
+
+                        <div class="mt-12 inline-block bg-slate-50 border border-slate-200 rounded-xl p-6 text-left shadow-sm min-w-[320px]">
+                            <div class="grid grid-cols-3 gap-y-2.5 text-xs">
+                                <span class="font-bold text-slate-500">진단 일자</span>
+                                <span class="col-span-2 font-semibold text-slate-800">{{ formattedDateFull }}</span>
+
+                                <span class="font-bold text-slate-500">시험 종별</span>
+                                <span class="col-span-2 font-semibold text-slate-800">{{ info.testType }}</span>
+
+                                <span class="font-bold text-slate-500">발전소 명</span>
+                                <span class="col-span-2 font-semibold text-slate-800">{{ info.siteNameLine1 }}</span>
+
+                                <span class="font-bold text-slate-500">진단 설비</span>
+                                <span class="col-span-2 font-semibold text-bsr-blue font-bold">{{ info.siteNameLine2 }}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 표지 하단 엔지니어링 회사 메타정보 -->
+                    <div class="border-t border-slate-300 pt-4 mt-auto">
+                        <div class="flex justify-between items-end">
+                            <div class="text-[11px] text-slate-600 space-y-0.5">
+                                <div class="font-bold text-slate-900 text-xs mb-1">주식회사 비에스알이앤지</div>
+                                <div>{{ info.companyAddress }}</div>
+                                <div>TEL: {{ info.companyTel }} &nbsp;|&nbsp; FAX: {{ info.companyFax }}</div>
+                            </div>
+                            <div class="text-right">
+                                <div class="text-xs font-bold text-slate-800">{{ formattedDateYearMonth }}</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ---------------------------------------------------------------- -->
+                <!-- PAGE 2: 목차 & 1. 설비 점검 결과서                              -->
+                <!-- ---------------------------------------------------------------- -->
+                <div class="a4-page">
+                    <div v-if="info.showWatermark" class="watermark">(주)비에스알이앤지</div>
+
+                    <!-- 공통 헤더 -->
+                    <div class="flex justify-between items-end border-b-2 border-slate-800 pb-1.5 mb-4 text-xs">
+                        <div class="flex items-center space-x-2">
+                            <span class="font-extrabold text-bsr-blue">BSR</span>
+                            <span class="font-bold text-slate-800">(주)비에스알이앤지</span>
+                            <span class="text-slate-400">|</span>
+                            <span class="text-slate-600 font-medium">{{ info.siteNameLine1 }} {{ info.siteNameLine2 }}</span>
+                        </div>
+                        <div class="text-right text-[11px]">
+                            <span class="text-slate-500">일자:</span> <span class="font-mono font-bold">{{ formattedDateDot }}</span> &nbsp;|&nbsp;
+                            <span class="text-slate-500">Page:</span> <span class="font-mono font-bold">2 / {{ totalPages }}</span>
+                        </div>
+                    </div>
+
+                    <!-- 목차 섹션 -->
+                    <div class="mb-6 bg-slate-50 p-4 rounded-lg border border-slate-200">
+                        <h2 class="font-bold text-sm text-bsr-blue mb-2.5 pb-1 border-b border-slate-300 flex items-center">
+                            <i class="fa-solid fa-list-ol mr-2"></i>목 차
+                        </h2>
+                        <ul class="text-xs space-y-1.5 font-medium text-slate-700">
+                            <li class="flex justify-between">
+                                <span>1. {{ displayFacilityType }} 설비 점검 결과서</span>
+                                <span class="font-mono text-slate-400">........................................................................................... Page 2</span>
+                            </li>
+                            <li class="flex justify-between">
+                                <span>2. 경보회로 성적서</span>
+                                <span class="font-mono text-slate-400">........................................................................................... Page 3 ~ {{ 2 + alarmPageCount }}</span>
+                            </li>
+                            <li class="flex justify-between">
+                                <span>3. 계기교정 성적서</span>
+                                <span class="font-mono text-slate-400">........................................................................................... Page {{ 3 + alarmPageCount }} ~ {{ 2 + alarmPageCount + calibPageCount }}</span>
+                            </li>
+                            <li class="flex justify-between">
+                                <span>4. 스위치류 점검기록표</span>
+                                <span class="font-mono text-slate-400">........................................................................................... Page {{ 3 + alarmPageCount + calibPageCount }} ~ {{ totalPages }}</span>
+                            </li>
+                        </ul>
+                    </div>
+
+                    <!-- 1. 설비 점검 결과서 본문 -->
+                    <div class="flex-1 flex flex-col justify-between">
+                        <div>
+                            <h2 class="text-base font-extrabold text-slate-900 mb-3 flex items-center border-l-4 border-bsr-blue pl-2">
+                                1. {{ displayFacilityType }} 설비 점검 결과서
+                            </h2>
+
+                            <!-- 상단 요약 정보표 -->
+                            <table class="w-full report-table mb-4">
+                                <tbody>
+                                    <tr>
+                                        <th class="w-24">시험일시</th>
+                                        <td class="font-medium">{{ formattedDateFull }}</td>
+                                        <th class="w-24">발전소 명</th>
+                                        <td class="font-medium">{{ info.siteNameLine1 }}</td>
+                                    </tr>
+                                    <tr>
+                                        <th>진단 설비</th>
+                                        <td class="font-bold text-bsr-blue">{{ info.siteNameLine2 }}</td>
+                                        <th>시험종별</th>
+                                        <td class="font-medium">{{ info.testType }}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+
+                            <!-- 점검 항목 테이블 -->
+                            <table class="w-full report-table mb-4">
+                                <thead>
+                                    <tr>
+                                        <th class="w-12">구분</th>
+                                        <th>시험항목</th>
+                                        <th class="w-24">시험결과</th>
+                                        <th class="w-24">비고</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="(item, idx) in checkItems" :key="idx">
+                                        <td class="text-center font-mono font-bold">{{ idx + 1 }}</td>
+                                        <td class="font-medium">{{ item.name }}</td>
+                                        <td class="text-center font-bold" :class="item.result === '양호' ? 'text-slate-800' : 'text-red-600'">{{ item.result }}</td>
+                                        <td class="text-center text-slate-500">{{ item.note }}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+
+                            <!-- ※ 기타 의견 -->
+                            <div class="border border-slate-300 rounded p-3 bg-slate-50/50 mb-4">
+                                <div class="font-bold text-xs text-slate-800 mb-1">※ 기타 특기사항</div>
+                                <div class="text-xs text-slate-700 whitespace-pre-line leading-relaxed font-sans">
+                                    {{ inspectionNotes }}
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 서명란 -->
+                        <div class="border-t border-slate-300 pt-4 mt-4">
+                            <div class="grid grid-cols-2 gap-4 text-xs">
+                                <div class="border border-slate-300 rounded p-2.5 flex items-center justify-between">
+                                    <div>
+                                        <span class="text-slate-500 block text-[10px]">진단계측 책임자</span>
+                                        <span class="font-bold text-slate-800">{{ info.leadEngineer }}</span>
+                                    </div>
+                                    <div class="w-12 h-12 border border-dashed border-slate-300 rounded-full flex items-center justify-center text-[10px] text-slate-400">
+                                        (인/서명)
+                                    </div>
+                                </div>
+                                <div class="border border-slate-300 rounded p-2.5 flex items-center justify-between">
+                                    <div>
+                                        <span class="text-slate-500 block text-[10px]">책임 시험원</span>
+                                        <span class="font-bold text-slate-800">{{ info.chiefTester }}</span>
+                                    </div>
+                                    <div class="w-12 h-12 border border-slate-400 rounded-full flex items-center justify-center text-[10px] text-bsr-blue font-bold bg-blue-50/50">
+                                        {{ getLastName(info.chiefTester) }}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 공통 푸터 -->
+                    <div class="border-t border-slate-300 pt-2 text-center text-[10px] text-slate-500 font-semibold tracking-wider">
+                        (주)비에스알이앤지 BSR ENGINEERING CO., LTD.
+                    </div>
+                </div>
+
+                <!-- ---------------------------------------------------------------- -->
+                <!-- PAGE 3 ~ : 2. 경보회로 시험성적서 (자동 분할)                       -->
+                <!-- ---------------------------------------------------------------- -->
+                <div v-for="(pageRows, pIdx) in chunkedAlarmRows" :key="'alarm_p_'+pIdx" class="a4-page">
+                    <div v-if="info.showWatermark" class="watermark">(주)비에스알이앤지</div>
+
+                    <!-- 헤더 -->
+                    <div class="flex justify-between items-end border-b-2 border-slate-800 pb-1.5 mb-3 text-xs">
+                        <div class="flex items-center space-x-2">
+                            <span class="font-extrabold text-bsr-blue">BSR</span>
+                            <span class="font-bold text-slate-800">(주)비에스알이앤지</span>
+                            <span class="text-slate-400">|</span>
+                            <span class="text-slate-600 font-medium">{{ info.siteNameLine1 }} {{ info.siteNameLine2 }}</span>
+                        </div>
+                        <div class="text-right text-[11px]">
+                            <span class="text-slate-500">일자:</span> <span class="font-mono font-bold">{{ formattedDateDot }}</span> &nbsp;|&nbsp;
+                            <span class="text-slate-500">Page:</span> <span class="font-mono font-bold">{{ 3 + pIdx }} / {{ totalPages }}</span>
+                        </div>
+                    </div>
+
+                    <!-- 본문 타이틀 -->
+                    <div class="mb-3">
+                        <h2 class="text-base font-extrabold text-slate-900 border-l-4 border-bsr-blue pl-2">
+                            2. 경보회로 성적서 <span class="text-xs font-normal text-slate-500">({{ pIdx + 1 }} / {{ alarmPageCount }})</span>
+                        </h2>
+                    </div>
+
+                    <!-- 경보회로 성적서 데이터 테이블 -->
+                    <div class="flex-1">
+                        <table class="w-full report-table">
+                            <thead>
+                                <tr>
+                                    <th class="w-8">No</th>
+                                    <th>항 목</th>
+                                    <th class="w-24">기기번호</th>
+                                    <th class="w-14">단위</th>
+                                    <th class="w-28">Interlock</th>
+                                    <th class="w-24">설계 값</th>
+                                    <th class="w-24">실측값</th>
+                                    <th class="w-16">결과</th>
+                                    <th class="w-24">비고</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr v-for="row in pageRows" :key="row.globalIndex">
+                                    <td class="text-center font-mono font-bold">{{ row.globalIndex + 1 }}</td>
+                                    <td class="font-medium text-slate-900">{{ row.name }}</td>
+                                    <td class="font-mono text-center">{{ row.tagNo }}</td>
+                                    <td class="text-center">{{ row.unit }}</td>
+                                    <td class="whitespace-pre-line font-mono text-[10px] leading-snug">{{ row.interlock }}</td>
+                                    <td class="whitespace-pre-line text-right font-mono leading-snug">{{ row.setValue }}</td>
+                                    <td class="whitespace-pre-line text-right font-mono font-semibold leading-snug">{{ row.actValue }}</td>
+                                    <td class="whitespace-pre-line text-center font-bold text-slate-800 leading-snug">{{ row.result }}</td>
+                                    <td class="text-center text-[10px] text-slate-600">{{ row.note }}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- 공통 푸터 -->
+                    <div class="border-t border-slate-300 pt-2 text-center text-[10px] text-slate-500 font-semibold tracking-wider">
+                        (주)비에스알이앤지 BSR ENGINEERING CO., LTD.
+                    </div>
+                </div>
+
+                <!-- ---------------------------------------------------------------- -->
+                <!-- PAGE ~ : 3. 계기교정 시험성적서 (자동 분할)                          -->
+                <!-- ---------------------------------------------------------------- -->
+                <div v-for="(pageCalibs, cPageIdx) in chunkedCalibItems" :key="'calib_p_'+cPageIdx" class="a4-page">
+                    <div v-if="info.showWatermark" class="watermark">(주)비에스알이앤지</div>
+
+                    <!-- 헤더 -->
+                    <div class="flex justify-between items-end border-b-2 border-slate-800 pb-1.5 mb-3 text-xs">
+                        <div class="flex items-center space-x-2">
+                            <span class="font-extrabold text-bsr-blue">BSR</span>
+                            <span class="font-bold text-slate-800">(주)비에스알이앤지</span>
+                            <span class="text-slate-400">|</span>
+                            <span class="text-slate-600 font-medium">{{ info.siteNameLine1 }} {{ info.siteNameLine2 }}</span>
+                        </div>
+                        <div class="text-right text-[11px]">
+                            <span class="text-slate-500">일자:</span> <span class="font-mono font-bold">{{ formattedDateDot }}</span> &nbsp;|&nbsp;
+                            <span class="text-slate-500">Page:</span> <span class="font-mono font-bold">{{ 3 + alarmPageCount + cPageIdx }} / {{ totalPages }}</span>
+                        </div>
+                    </div>
+
+                    <!-- 타이틀 -->
+                    <div class="mb-3">
+                        <h2 class="text-base font-extrabold text-slate-900 border-l-4 border-bsr-blue pl-2">
+                            3. 계기교정 성적서 <span class="text-xs font-normal text-slate-500">({{ cPageIdx + 1 }} / {{ calibPageCount }})</span>
+                        </h2>
+                    </div>
+
+                    <!-- 계기교정 성적서 테이블 -->
+                    <div class="flex-1">
+                        <table class="w-full report-table">
+                            <thead>
+                                <tr>
+                                    <th class="w-7">No</th>
+                                    <th>명칭 / 기기번호</th>
+                                    <th class="w-32">종류 / Range</th>
+                                    <th class="w-8">%</th>
+                                    <th class="w-24">기준 입력값</th>
+                                    <th class="w-20">기준 출력값</th>
+                                    <th class="w-24">교정 전 입력값</th>
+                                    <th class="w-20">교정 전 출력값</th>
+                                    <th class="w-32">교정 후 입력 / 출력값</th>
+                                    <th class="w-12">결과</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <template v-for="item in pageCalibs" :key="item.globalIndex">
+                                    <tr v-for="(p, pIdx) in item.points" :key="pIdx">
+                                        <!-- No 및 기본 정보 병합 (5행 단위) -->
+                                        <td v-if="pIdx === 0" rowSpan="5" class="text-center font-mono font-bold">{{ item.globalIndex + 1 }}</td>
+                                        <td v-if="pIdx === 0" rowSpan="5" class="font-medium text-slate-900 leading-tight">
+                                            {{ item.nameTag }}
+                                        </td>
+                                        <td v-if="pIdx === 0" rowSpan="5" class="text-center text-[10px] leading-tight">
+                                            <div>{{ getSensorTypeName(item.sensorType) }}</div>
+                                            <div class="font-mono font-bold text-slate-700">{{ item.rangeMin }} ~ {{ item.rangeMax }}</div>
+                                        </td>
+
+                                        <td class="text-center font-mono text-[10px] font-bold">{{ p.pct }}%</td>
+                                        <td class="text-right font-mono text-[10px] text-indigo-900">{{ p.refIn }}</td>
+                                        <td class="text-right font-mono text-[10px]">{{ p.refOut }} {{ item.unit }}</td>
+                                        <td class="text-right font-mono text-[10px]">{{ p.preIn }}</td>
+                                        <td class="text-right font-mono text-[10px] font-semibold text-slate-800">{{ p.preOut }}</td>
+                                        <td class="text-right font-mono text-[10px]">
+                                            <span class="text-slate-500 mr-1">{{ p.postIn }}</span>
+                                            <span class="font-bold text-slate-900">{{ p.postOut }} {{ item.unit }}</span>
+                                        </td>
+                                        
+                                        <td v-if="pIdx === 0" rowSpan="5" class="text-center font-bold text-slate-800">
+                                            양호
+                                        </td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- 공통 푸터 -->
+                    <div class="border-t border-slate-300 pt-2 text-center text-[10px] text-slate-500 font-semibold tracking-wider">
+                        (주)비에스알이앤지 BSR ENGINEERING CO., LTD.
+                    </div>
+                </div>
+
+                <!-- ---------------------------------------------------------------- -->
+                <!-- PAGE ~ : 4. 스위치류 점검기록표 (CHECK SHEET - 1스위치 1페이지)         -->
+                <!-- ---------------------------------------------------------------- -->
+                <div v-for="(sw, swIdx) in switchItems" :key="'sw_p_'+swIdx" class="a4-page">
+                    <div v-if="info.showWatermark" class="watermark">(주)비에스알이앤지</div>
+
+                    <!-- 헤더 -->
+                    <div class="flex justify-between items-end border-b-2 border-slate-800 pb-1.5 mb-4 text-xs">
+                        <div class="flex items-center space-x-2">
+                            <span class="font-extrabold text-bsr-blue">BSR</span>
+                            <span class="font-bold text-slate-800">(주)비에스알이앤지</span>
+                            <span class="text-slate-400">|</span>
+                            <span class="text-slate-600 font-medium">{{ info.siteNameLine1 }} {{ info.siteNameLine2 }}</span>
+                        </div>
+                        <div class="text-right text-[11px]">
+                            <span class="text-slate-500">일자:</span> <span class="font-mono font-bold">{{ formattedDateDot }}</span> &nbsp;|&nbsp;
+                            <span class="text-slate-500">Page:</span> <span class="font-mono font-bold">{{ 3 + alarmPageCount + calibPageCount + swIdx }} / {{ totalPages }}</span>
+                        </div>
+                    </div>
+
+                    <!-- 본문 -->
+                    <div class="flex-1 flex flex-col justify-between">
+                        <div>
+                            <!-- 타이틀 및 도장 -->
+                            <div class="flex justify-between items-center mb-4">
+                                <h2 class="text-xl font-black text-slate-900 border-l-4 border-bsr-blue pl-3">
+                                    4. 스위치류 점검기록표 <span class="text-sm font-normal text-slate-500">(CHECK SHEET)</span>
+                                </h2>
+                                <div class="border-2 border-bsr-blue text-bsr-blue rounded px-3 py-1 font-bold text-xs tracking-wider">
+                                    (주)비에스알이앤지 -계측-
+                                </div>
+                            </div>
+
+                            <!-- 기본 정보 카드표 -->
+                            <table class="w-full report-table mb-4">
+                                <tbody>
+                                    <tr>
+                                        <th class="w-24">발전소 명칭</th>
+                                        <td class="font-semibold">{{ info.siteNameLine1 }} {{ info.siteNameLine2 }}</td>
+                                        <th class="w-24">계기구분</th>
+                                        <td class="w-32 text-center font-bold text-bsr-blue">{{ sw.type }}</td>
+                                        <th class="w-20">Tag No</th>
+                                        <td class="w-28 text-center font-mono font-bold text-lg text-slate-900">{{ sw.tagNo }}</td>
+                                    </tr>
+                                    <tr>
+                                        <th>No.</th>
+                                        <td class="font-mono font-bold text-center">{{ swIdx + 1 }}</td>
+                                        <th>점검일</th>
+                                        <td class="font-mono text-center">{{ formattedDateDotNoEnd }}</td>
+                                        <th>측정자</th>
+                                        <td class="text-center font-medium">{{ info.fieldTesters }}</td>
+                                    </tr>
+                                    <tr>
+                                        <th>기기명</th>
+                                        <td colspan="3" class="font-bold text-slate-900">{{ sw.name }}</td>
+                                        <th>확인자</th>
+                                        <td class="text-center font-medium">{{ info.verifier }}</td>
+                                    </tr>
+                                    <tr>
+                                        <th>Range</th>
+                                        <td class="font-mono">{{ sw.range }}</td>
+                                        <th>설치 위치</th>
+                                        <td colspan="3">{{ sw.location }}</td>
+                                    </tr>
+                                    <tr>
+                                        <th>제조사</th>
+                                        <td>{{ sw.manufacturer }}</td>
+                                        <th>형식</th>
+                                        <td colspan="3">{{ sw.modelType }}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+
+                            <!-- 1. 시험 및 교정 -->
+                            <div class="mb-4">
+                                <h3 class="font-bold text-sm text-slate-900 mb-1.5 flex items-center">
+                                    <span class="w-2 h-2 bg-bsr-blue rounded-full mr-2"></span>1. 시험 및 교정
+                                </h3>
+                                <table class="w-full report-table">
+                                    <thead>
+                                        <tr>
+                                            <th rowSpan="2" class="w-24">Standard</th>
+                                            <th colSpan="3">교정 전</th>
+                                            <th colSpan="3">교정 후</th>
+                                        </tr>
+                                        <tr>
+                                            <th class="w-20">SET Value</th>
+                                            <th class="w-16">Type</th>
+                                            <th class="w-16">단위</th>
+                                            <th class="w-24">Set</th>
+                                            <th class="w-16">Type</th>
+                                            <th class="w-16">단위</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="text-center font-mono">
+                                        <tr>
+                                            <td class="font-sans font-bold bg-slate-50">Set {{ sw.setVal }}</td>
+                                            <td class="font-bold text-amber-800 bg-amber-50/50">{{ sw.preSet }}</td>
+                                            <td>
+                                                <span class="custom-checkbox" :class="{'checked': sw.dir === '↑'}"></span> ↑
+                                                <span class="custom-checkbox ml-1" :class="{'checked': sw.dir === '↓'}"></span> ↓
+                                            </td>
+                                            <td class="font-sans">{{ sw.unit }}</td>
+                                            <td class="font-bold text-emerald-800 bg-emerald-50/50">{{ sw.setVal }}</td>
+                                            <td>
+                                                <span class="custom-checkbox" :class="{'checked': sw.dir === '↑'}"></span> ↑
+                                                <span class="custom-checkbox ml-1" :class="{'checked': sw.dir === '↓'}"></span> ↓
+                                            </td>
+                                            <td class="font-sans">{{ sw.unit }}</td>
+                                        </tr>
+                                        <tr>
+                                            <td class="font-sans font-bold bg-slate-50">사용접점</td>
+                                            <td colSpan="6" class="font-sans text-left px-4">
+                                                <span class="custom-checkbox" :class="{'checked': sw.contact === 'NO'}"></span> NO &nbsp;&nbsp;&nbsp;&nbsp;
+                                                <span class="custom-checkbox" :class="{'checked': sw.contact === 'NC'}"></span> NC
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <!-- 2. 점검항목 & 4. 종합판정 (Side by Side) -->
+                            <div class="grid grid-cols-2 gap-4 mb-4">
+                                <div>
+                                    <h3 class="font-bold text-sm text-slate-900 mb-1.5 flex items-center">
+                                        <span class="w-2 h-2 bg-bsr-blue rounded-full mr-2"></span>2. 점검항목
+                                    </h3>
+                                    <table class="w-full report-table">
+                                        <tbody>
+                                            <tr>
+                                                <td class="font-medium bg-slate-50 w-36">스위치 접촉 저항 [Ω]</td>
+                                                <td class="font-mono text-center font-bold">{{ sw.resistance }}</td>
+                                            </tr>
+                                            <tr>
+                                                <td class="font-medium bg-slate-50">SWITCH 동작 TEST</td>
+                                                <td class="text-center font-bold text-slate-800">양호</td>
+                                            </tr>
+                                            <tr>
+                                                <td class="font-medium bg-slate-50">신호선 연결 상태</td>
+                                                <td class="text-center font-bold text-slate-800">양호</td>
+                                            </tr>
+                                            <tr>
+                                                <td class="font-medium bg-slate-50">지시기 영점 조정</td>
+                                                <td class="text-center font-bold text-slate-800">양호</td>
+                                            </tr>
+                                            <tr>
+                                                <td class="font-medium bg-slate-50">기기 외관 및 고정 상태</td>
+                                                <td class="text-center font-bold text-slate-800">양호</td>
+                                            </tr>
+                                            <tr>
+                                                <td class="font-medium bg-slate-50">Setting Point 확인</td>
+                                                <td class="text-center font-bold text-slate-800">양호</td>
+                                            </tr>
+                                            <tr>
+                                                <td class="font-medium bg-slate-50">접촉저항 Check</td>
+                                                <td class="text-center font-bold text-slate-800">양호</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                <div class="flex flex-col justify-between">
+                                    <div>
+                                        <h3 class="font-bold text-sm text-slate-900 mb-1.5 flex items-center">
+                                            <span class="w-2 h-2 bg-bsr-blue rounded-full mr-2"></span>3. 사용 장비
+                                        </h3>
+                                        <table class="w-full report-table mb-3">
+                                            <thead>
+                                                <tr>
+                                                    <th>계측기명</th>
+                                                    <th>규격</th>
+                                                    <th>Ser No</th>
+                                                    <th>정비업체</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody class="text-center font-mono text-[10px]">
+                                                <tr>
+                                                    <td class="font-sans font-semibold">FLUKE 754</td>
+                                                    <td>0~100 [bar]</td>
+                                                    <td>F615902</td>
+                                                    <td class="font-sans">자사</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+
+                                    <div>
+                                        <h3 class="font-bold text-sm text-slate-900 mb-1.5 flex items-center">
+                                            <span class="w-2 h-2 bg-bsr-blue rounded-full mr-2"></span>4. 종합판정
+                                        </h3>
+                                        <div class="border-2 border-emerald-600 bg-emerald-50 rounded text-center py-2.5">
+                                            <span class="text-emerald-800 font-extrabold text-base tracking-widest">양 호 (PASS)</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 5. 특기사항 -->
+                            <div class="border border-slate-300 rounded p-2.5 bg-slate-50/50">
+                                <div class="font-bold text-xs text-slate-800 mb-1">5. 특기사항</div>
+                                <div class="text-xs text-slate-600">
+                                    • 본 스위치는 정밀 설정값(SET Value {{ sw.setVal }} {{ sw.unit }}) 동작 검증 및 접촉저항 시험 결과 정수 기준치 이내로 정상 작동함.
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 스위치 하단 기술사 / 서명 영역 -->
+                        <div class="border-t border-slate-300 pt-3 mt-4 flex justify-between items-center">
+                            <div class="text-[10px] text-slate-500 space-y-0.5">
+                                <div class="font-bold text-slate-800">BAR (주)비에스알이앤지</div>
+                                <div>경기도 용인시 기흥구 흥덕1로 13 흥덕IT밸리 B동 917호</div>
+                            </div>
+                            <div class="text-right border border-slate-300 rounded px-3 py-1.5 bg-slate-50">
+                                <div class="text-xs font-bold text-slate-900">건축전기설비기술사 안수련</div>
+                                <div class="text-[10px] font-mono text-slate-500">등록번호 : 08184010319D</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 공통 푸터 -->
+                    <div class="border-t border-slate-300 pt-2 text-center text-[10px] text-slate-500 font-semibold tracking-wider">
+                        (주)비에스알이앤지 BSR ENGINEERING CO., LTD.
+                    </div>
+                </div>
+
+            </div>
+
+        </main>
+    </div>
+
+    <!-- Vue 3 스크립트 앱 로직 -->
+    <script>
+        const { createApp } = Vue;
+
+        createApp({
+            data() {
+                return {
+                    currentTab: 'edit',
+                    isPrinting: false,
+
+                    // 공통 메타 정보
+                    info: {
+                        siteNameLine1: '구미시 환경자원화시설',
+                        siteNameLine2: '자가용 증기터빈 발전시설',
+                        facilityType: '증기터빈 발전기',
+                        customFacilityType: '',
+                        date: '2026-10-22',
+                        testType: '정기검사를 위한 안전진단',
+                        leadEngineer: '(주)비에스알이앤지 안수련 대표',
+                        chiefTester: '(주)비에스알이앤지 나병국 이사',
+                        fieldTesters: '김성기, 김한진',
+                        verifier: '전기안전관리자',
+                        companyAddress: '경기도 용인시 기흥구 흥덕1로 13 흥덕IT밸리 B동 917호',
+                        companyTel: '070-4348-1170~4',
+                        companyFax: '070-8244-1175',
+                        showWatermark: true
+                    },
+
+                    // 1. 점검 항목 리스트
+                    checkItems: [
+                        { name: '1. 주위 환경', result: '양호', note: '' },
+                        { name: '2. 주요 스위치류 및 조작위치', result: '양호', note: '' },
+                        { name: '3. 내부상태 및 청결상태', result: '양호', note: '' },
+                        { name: '4. 외함 온도', result: '양호', note: '' },
+                        { name: '5. Transmitter 및 RTD 및 Switch 동작상태', result: '양호', note: '' },
+                        { name: '6. 접점 상태', result: '양호', note: '' },
+                        { name: '7. 접속 단자', result: '양호', note: '' },
+                        { name: '8. 주요 스위치 및 조작위치', result: '양호', note: '' }
+                    ],
+                    inspectionNotes: '○ 증기터빈 발전기 설비 점검결과 양호합니다.\n○ 안전사고 예방을 위하여 운전중일 경우 확인하기 위한 표지판 설치를 권장합니다.\n○ 고장시 원활한 수리를 위하여 예비품 및 예비공구를 비치하실 것을 권장합니다.\n○ 진단 결과를 첨부하며 제작사에서 제시한 설비의 수명 및 성능유지를 위해 운용 및 정비를 철저히 시행하시기 바랍니다. 끝.',
+
+                    // 2. 경보회로 리스트
+                    alarmRows: [],
+
+                    // 3. 계기교정 리스트
+                    calibItems: [],
+
+                    // 4. 스위치 리스트
+                    switchItems: []
+                }
+            },
+            computed: {
+                displayFacilityType() {
+                    return this.info.facilityType === '직접입력' ? (this.info.customFacilityType || '발전설비') : this.info.facilityType;
+                },
+                formattedDateFull() {
+                    if (!this.info.date) return '';
+                    const d = new Date(this.info.date);
+                    return `${d.getFullYear()}년 ${d.getMonth() + 1}월 ${d.getDate()}일`;
+                },
+                formattedDateYearMonth() {
+                    if (!this.info.date) return '';
+                    const d = new Date(this.info.date);
+                    return `${d.getFullYear()}년 ${d.getMonth() + 1}월`;
+                },
+                formattedDateDot() {
+                    if (!this.info.date) return '';
+                    const d = new Date(this.info.date);
+                    return `${d.getFullYear()}. ${String(d.getMonth() + 1).padStart(2, '0')}. ${String(d.getDate()).padStart(2, '0')}.`;
+                },
+                formattedDateDotNoEnd() {
+                    if (!this.info.date) return '';
+                    const d = new Date(this.info.date);
+                    return `${d.getFullYear()}. ${String(d.getMonth() + 1).padStart(2, '0')}. ${String(d.getDate()).padStart(2, '0')}`;
+                },
+                formattedDateCompact() {
+                    if (!this.info.date) return '20261022';
+                    return this.info.date.replace(/-/g, '');
+                },
+
+                // 경보회로 1페이지당 15행 자동 청크 분할
+                chunkedAlarmRows() {
+                    const chunkSize = 15;
+                    const result = [];
+                    for (let i = 0; i < this.alarmRows.length; i += chunkSize) {
+                        const chunk = this.alarmRows.slice(i, i + chunkSize).map((row, idx) => ({
+                            ...row,
+                            globalIndex: i + idx
+                        }));
+                        result.push(chunk);
+                    }
+                    return result.length > 0 ? result : [[]];
+                },
+                alarmPageCount() {
+                    return Math.max(1, this.chunkedAlarmRows.length);
+                },
+
+                // 계기교정 1페이지당 3개 기기 (총 15행) 분할
+                chunkedCalibItems() {
+                    const chunkSize = 3;
+                    const result = [];
+                    for (let i = 0; i < this.calibItems.length; i += chunkSize) {
+                        const chunk = this.calibItems.slice(i, i + chunkSize).map((item, idx) => ({
+                            ...item,
+                            globalIndex: i + idx
+                        }));
+                        result.push(chunk);
+                    }
+                    return result.length > 0 ? result : [[]];
+                },
+                calibPageCount() {
+                    return Math.max(1, this.chunkedCalibItems.length);
+                },
+
+                // 전체 A4 페이지 수 계산 (표지 1 + 점검결과 1 + 경보 + 교정 + 스위치)
+                totalPages() {
+                    return 2 + this.alarmPageCount + this.calibPageCount + this.switchItems.length;
+                }
+            },
+            mounted() {
+                // 저장된 데이터가 있으면 로드, 없으면 샘플 로드
+                const saved = localStorage.getItem('bsr_report_data');
+                if (saved) {
+                    try {
+                        const parsed = JSON.parse(saved);
+                        this.info = parsed.info || this.info;
+                        this.checkItems = parsed.checkItems || this.checkItems;
+                        this.inspectionNotes = parsed.inspectionNotes || this.inspectionNotes;
+                        this.alarmRows = parsed.alarmRows || [];
+                        this.calibItems = parsed.calibItems || [];
+                        this.switchItems = parsed.switchItems || [];
+                    } catch (e) {
+                        this.loadSampleData();
+                    }
+                } else {
+                    this.loadSampleData();
+                }
+
+                // 자동 저장 등록
+                this.$watch('$data', () => {
+                    localStorage.setItem('bsr_report_data', JSON.stringify(this.$data));
+                }, { deep: true });
+            },
+            methods: {
+                onFacilityTypeChange() {
+                    const fName = this.displayFacilityType;
+                    this.inspectionNotes = `○ ${fName} 설비 점검결과 양호합니다.\n○ 안전사고 예방을 위하여 운전중일 경우 확인하기 위한 표지판 설치를 권장합니다.\n○ 고장시 원활한 수리를 위하여 예비품 및 예비공구를 비치하실 것을 권장합니다.\n○ 진단 결과를 첨부하며 제작사에서 제시한 설비의 수명 및 성능유지를 위해 운용 및 정비를 철저히 시행하시기 바랍니다. 끝.`;
+                },
+                getLastName(fullName) {
+                    if (!fullName) return '직인';
+                    const nameOnly = fullName.replace(/\(주\)비에스알이앤지|\s|대표|이사|부장|차장|과장|대리|사원/g, '');
+                    return nameOnly.length > 0 ? nameOnly.slice(0, 3) : '직인';
+                },
+
+                // 1. 점검항목 조작
+                addCheckItem() {
+                    this.checkItems.push({ name: '새 점검 항목', result: '양호', note: '' });
+                },
+                removeCheckItem(idx) {
+                    this.checkItems.splice(idx, 1);
+                },
+
+                // 2. 경보회로 조작
+                addAlarmRow() {
+                    this.alarmRows.push({
+                        name: '새 경보 항목',
+                        tagNo: 'TAG-001',
+                        unit: '℃',
+                        interlock: 'H Alarm',
+                        setValue: '90',
+                        actValue: '90',
+                        result: '양호',
+                        note: ''
+                    });
+                },
+                removeAlarmRow(idx) {
+                    this.alarmRows.splice(idx, 1);
+                },
+                onAlarmSetValueChange(row) {
+                    row.actValue = row.setValue;
+                    row.result = row.setValue.includes('\n') ? '양호\n양호' : '양호';
+                },
+
+                // 3. 계기교정 물리 엑셀 수식 연산 엔진
+                addCalibItem() {
+                    const newItem = {
+                        nameTag: 'New Sensor (TT-001)',
+                        sensorType: 'TC_K',
+                        rangeMin: 0,
+                        rangeMax: 100,
+                        unit: '℃',
+                        offset: 0.5,
+                        points: []
+                    };
+                    this.recalculateCalib(newItem);
+                    this.calibItems.push(newItem);
+                },
+                removeCalibItem(idx) {
+                    this.calibItems.splice(idx, 1);
+                },
+
+                // 엑셀 변환 물리 수식 공식
+                recalculateCalib(cal) {
+                    const min = parseFloat(cal.rangeMin) || 0;
+                    const max = parseFloat(cal.rangeMax) || 100;
+                    const pcts = [0, 25, 50, 75, 100];
+                    const offset = parseFloat(cal.offset) || 0;
+
+                    cal.points = pcts.map(pct => {
+                        const refOutVal = min + (max - min) * (pct / 100);
+                        const refOutStr = Number(refOutVal.toFixed(2)).toString();
+
+                        // 센서 물리 변환 (기준 입력값 계산)
+                        let refInValStr = '';
+                        if (cal.sensorType === 'RTD_PT100') {
+                            // Callendar-Van Dusen equation (Pt100 IEC 60751)
+                            const t = refOutVal;
+                            let r = 100;
+                            if (t >= 0) {
+                                r = 100 * (1 + 3.9083e-3 * t - 5.775e-7 * Math.pow(t, 2));
+                            } else {
+                                r = 100 * (1 + 3.9083e-3 * t - 5.775e-7 * Math.pow(t, 2) - 4.183e-12 * (t - 100) * Math.pow(t, 3));
+                            }
+                            refInValStr = Number(r.toFixed(2)) + 'Ω';
+                        } else if (cal.sensorType === 'RTD_JPT100') {
+                            const t = refOutVal;
+                            const r = 100 * (1 + 3.9739e-3 * t - 5.870e-7 * Math.pow(t, 2));
+                            refInValStr = Number(r.toFixed(2)) + 'Ω';
+                        } else if (cal.sensorType === 'TC_K') {
+                            // NIST ITS-90 Polynomial for K-Type (0~1372 ℃ -> mV)
+                            const t = refOutVal;
+                            const c = [0.0, 4.0848839e-2, -4.2483864e-6, 4.7088498e-8, -5.7001476e-11, 3.5592817e-14, -1.3323011e-17, 2.9461146e-21, -3.4287661e-25, 1.6961448e-29];
+                            let mv = 0;
+                            for (let i = 0; i < c.length; i++) {
+                                mv += c[i] * Math.pow(t, i);
+                            }
+                            mv += 0.1185976 * Math.exp(-1.183432e-4 * Math.pow(t - 126.9686, 2));
+                            refInValStr = Number(mv.toFixed(2)) + 'mV';
+                        } else if (cal.sensorType === 'TC_J') {
+                            const t = refOutVal;
+                            const c = [0, 5.0381187e-2, 3.0475836e-5, -8.5681065e-8, 1.322819e-10, -1.705295e-13, 2.094809e-16];
+                            let mv = 0;
+                            for (let i = 0; i < c.length; i++) {
+                                mv += c[i] * Math.pow(t, i);
+                            }
+                            refInValStr = Number(mv.toFixed(2)) + 'mV';
+                        } else if (cal.sensorType === 'TRANS_420') {
+                            const ma = 4 + 16 * (pct / 100);
+                            refInValStr = Number(ma.toFixed(2)) + 'mA';
+                        } else if (cal.sensorType === 'TRANS_15V') {
+                            const v = 1 + 4 * (pct / 100);
+                            refInValStr = Number(v.toFixed(2)) + 'V';
+                        }
+
+                        // 교정 전 출력값 (오차 offset 반영)
+                        const preOutVal = refOutVal + offset;
+                        const preOutStr = Number(preOutVal.toFixed(2)) + (cal.unit ? ' ' + cal.unit : '');
+
+                        return {
+                            pct: pct,
+                            refIn: refInValStr,
+                            refOut: refOutStr,
+                            preIn: refInValStr,
+                            preOut: preOutStr,
+                            postIn: refInValStr,
+                            postOut: refOutStr
+                        };
+                    });
+                },
+                getSensorTypeName(type) {
+                    const map = {
+                        'RTD_PT100': 'RTD (Pt100)',
+                        'RTD_JPT100': 'RTD (JPt100)',
+                        'TC_K': 'Thermo Couple (K)',
+                        'TC_J': 'Thermo Couple (J)',
+                        'TRANS_420': 'Vibration Transmitter (4~20mA)',
+                        'TRANS_15V': 'Transmitter (1~5V)'
+                    };
+                    return map[type] || type;
+                },
+
+                // 4. 스위치류 조작
+                addSwitchItem() {
+                    this.switchItems.push({
+                        tagNo: 'PS-NEW',
+                        name: 'New Pressure Switch',
+                        type: '압력스위치',
+                        location: 'Turbine',
+                        range: '0~10kg/cm²',
+                        manufacturer: 'Switzer',
+                        modelType: 'Pressure Switch',
+                        setVal: '5.0',
+                        preSet: '5.05',
+                        dir: '↓',
+                        unit: 'kg/cm²',
+                        contact: 'NC',
+                        resistance: '0.1 [Ω]'
+                    });
+                },
+                removeSwitchItem(idx) {
+                    this.switchItems.splice(idx, 1);
+                },
+                onSwitchSetValChange(sw) {
+                    sw.preSet = sw.setVal;
+                },
+
+                // 스마트 연동 기능
+                syncToCalibration() {
+                    // 경보회로 중 RTD, TT, VX 항목을 계기교정으로 자동 추출 생성
+                    const newCalibs = [];
+                    this.alarmRows.forEach(row => {
+                        const tag = row.tagNo || '';
+                        if (tag.includes('TT') || tag.includes('RTD') || tag.includes('VX')) {
+                            let sType = 'RTD_PT100';
+                            let min = 0, max = 200, unit = '℃';
+
+                            if (tag.includes('TT-102')) {
+                                sType = 'TC_K'; max = 600;
+                            } else if (tag.includes('RTD-200') || tag.includes('RTD-201') || tag.includes('RTD-202') || tag.includes('RTD-203') || tag.includes('RTD-204') || tag.includes('RTD-205')) {
+                                sType = 'RTD_PT100'; max = 450;
+                            } else if (tag.includes('VX')) {
+                                sType = 'TRANS_420'; max = 12.7; unit = 'mm/s';
+                            }
+
+                            const item = {
+                                nameTag: `${row.name} (${row.tagNo})`,
+                                sensorType: sType,
+                                rangeMin: min,
+                                rangeMax: max,
+                                unit: unit,
+                                offset: 0.6,
+                                points: []
+                            };
+                            this.recalculateCalib(item);
+                            newCalibs.push(item);
+                        }
+                    });
+
+                    if (newCalibs.length > 0) {
+                        this.calibItems = newCalibs;
+                        alert(`${newCalibs.length}개 온도/진동 항목이 계기교정 성적서로 동기화되었습니다.`);
+                    } else {
+                        alert('동기화할 RTD/TT/VX 경보 항목이 없습니다.');
+                    }
+                },
+                syncToSwitches() {
+                    // 경보회로 중 PS, TS, LS 등 스위치 항목을 스위치 점검표로 자동 생성
+                    const newSwitches = [];
+                    this.alarmRows.forEach(row => {
+                        const tag = row.tagNo || '';
+                        if (tag.includes('PS') || tag.includes('TS') || tag.includes('LS')) {
+                            newSwitches.push({
+                                tagNo: tag,
+                                name: row.name,
+                                type: '압력스위치',
+                                location: 'Turbine',
+                                range: '0.2kg/cm²~2kg/cm²',
+                                manufacturer: 'Switzer',
+                                modelType: 'Pressure Switch',
+                                setVal: row.setValue.split('\n')[0] || '1.0',
+                                preSet: row.setValue.split('\n')[0] || '1.0',
+                                dir: row.interlock.includes('L') ? '↓' : '↑',
+                                unit: row.unit || 'kg/cm²',
+                                contact: row.interlock.includes('Trip') ? 'NC' : 'NO',
+                                resistance: '0.1 [Ω]'
+                            });
+                        }
+                    });
+
+                    if (newSwitches.length > 0) {
+                        this.switchItems = newSwitches;
+                        alert(`${newSwitches.length}개 스위치 항목이 스위치류 점검기록표로 생성되었습니다.`);
+                    } else {
+                        alert('동기화할 PS/TS 스위치 항목이 없습니다.');
+                    }
+                },
+
+                // 구미시 환경자원화시설 샘플 데이터 완전 로드 (제공된 PDF 100% 재현)
+                loadSampleData() {
+                    this.info = {
+                        siteNameLine1: '구미시 환경자원화시설',
+                        siteNameLine2: '자가용 증기터빈 발전시설',
+                        facilityType: '증기터빈 발전기',
+                        customFacilityType: '',
+                        date: '2026-10-22',
+                        testType: '정기검사를 위한 안전진단',
+                        leadEngineer: '(주)비에스알이앤지 안수련 대표',
+                        chiefTester: '(주)비에스알이앤지 나병국 이사',
+                        fieldTesters: '김성기, 김한진',
+                        verifier: '전기안전관리자',
+                        companyAddress: '경기도 용인시 기흥구 흥덕1로 13 흥덕IT밸리 B동 917호',
+                        companyTel: '070-4348-1170~4',
+                        companyFax: '070-8244-1175',
+                        showWatermark: true
+                    };
+
+                    this.checkItems = [
+                        { name: '1. 주위 환경', result: '양호', note: '' },
+                        { name: '2. 주요 스위치류 및 조작위치', result: '양호', note: '' },
+                        { name: '3. 내부상태 및 청결상태', result: '양호', note: '' },
+                        { name: '4. 외함 온도', result: '양호', note: '' },
+                        { name: '5. Transmitter 및 RTD 및 Switch 동작상태', result: '양호', note: '' },
+                        { name: '6. 접점 상태', result: '양호', note: '' },
+                        { name: '7. 접속 단자', result: '양호', note: '' },
+                        { name: '8. 주요 스위치 및 조작위치', result: '양호', note: '' }
+                    ];
+
+                    this.inspectionNotes = '○ 증기터빈 발전기 설비 점검결과 양호합니다.\n○ 안전사고 예방을 위하여 운전중일 경우 확인하기 위한 표지판 설치를 권장합니다.\n○ 고장시 원활한 수리를 위하여 예비품 및 예비공구를 비치하실 것을 권장합니다.\n○ 진단 결과를 첨부하며 제작사에서 제시한 설비의 수명 및 성능유지를 위해 운용 및 정비를 철저히 시행하시기 바랍니다. 끝.';
+
+                    // PDF 내 23개 경보회로 완벽 탑재
+                    this.alarmRows = [
+                        { name: 'Inlet Steam Temperature', tagNo: 'TT-102', unit: '℃', interlock: 'L Alarm', setValue: '155', actValue: '155', result: '양호', note: '' },
+                        { name: 'Turbine Rotor Front Bearing Temperature', tagNo: 'RTD-200', unit: '℃', interlock: 'H Alarm\nHH Trip', setValue: '95\n100', actValue: '95\n100', result: '양호\n양호', note: '' },
+                        { name: 'Turbine Rotor Rear Bearing Temperature', tagNo: 'RTD-201', unit: '℃', interlock: 'H Alarm\nHH Trip', setValue: '95\n100', actValue: '95\n100', result: '양호\n양호', note: '' },
+                        { name: 'Gearbox Pinion DE Bearing Temperature', tagNo: 'RTD-202', unit: '℃', interlock: 'H Alarm\nHH Trip', setValue: '85\n90', actValue: '85\n90', result: '양호\n양호', note: '' },
+                        { name: 'Gearbox Pinion NDE Bearing Temperature', tagNo: 'RTD-203', unit: '℃', interlock: 'H Alarm\nHH Trip', setValue: '85\n90', actValue: '85\n90', result: '양호\n양호', note: '' },
+                        { name: 'Gearbox Wheel DE Bearing Temperature', tagNo: 'RTD-204', unit: '℃', interlock: 'H Alarm\nHH Trip', setValue: '85\n90', actValue: '85\n90', result: '양호\n양호', note: '' },
+                        { name: 'Gearbox Wheel NDE Bearing Temperature', tagNo: 'RTD-205', unit: '℃', interlock: 'H Alarm\nHH Trip', setValue: '85\n90', actValue: '85\n90', result: '양호\n양호', note: '' },
+                        { name: 'Generator Winding Temperature (R1)', tagNo: 'RTD-1', unit: '℃', interlock: 'H Alarm\nHH Trip', setValue: '110\n120', actValue: '110\n120', result: '양호\n양호', note: '' },
+                        { name: 'Generator Winding Temperature (R2)', tagNo: 'RTD-2', unit: '℃', interlock: 'H Alarm\nHH Trip', setValue: '110\n120', actValue: '110\n120', result: '양호\n양호', note: '' },
+                        { name: 'Generator Winding Temperature (S1)', tagNo: 'RTD-3', unit: '℃', interlock: 'H Alarm\nHH Trip', setValue: '110\n120', actValue: '110\n120', result: '양호\n양호', note: '' },
+                        { name: 'Generator Winding Temperature (S2)', tagNo: 'RTD-4', unit: '℃', interlock: 'H Alarm\nHH Trip', setValue: '110\n120', actValue: '110\n120', result: '양호\n양호', note: '' },
+                        { name: 'Generator Winding Temperature (T1)', tagNo: 'RTD-5', unit: '℃', interlock: 'H Alarm\nHH Trip', setValue: '110\n120', actValue: '110\n120', result: '양호\n양호', note: '' },
+                        { name: 'Generator Winding Temperature (T2)', tagNo: 'RTD-6', unit: '℃', interlock: 'H Alarm\nHH Trip', setValue: '110\n120', actValue: '110\n120', result: '양호\n양호', note: '' },
+                        { name: 'Generator NDE Bearing Temperature', tagNo: 'RTD-7', unit: '℃', interlock: 'H Alarm\nHH Trip', setValue: '85\n90', actValue: '85\n90', result: '양호\n양호', note: '' },
+                        { name: 'Generator DE Bearing Temperature', tagNo: 'RTD-8', unit: '℃', interlock: 'H Alarm\nHH Trip', setValue: '85\n90', actValue: '85\n90', result: '양호\n양호', note: '' },
+                        { name: 'Lube Oil Pressure', tagNo: 'PS-202\nPS-203', unit: 'kg/cm²', interlock: 'L Alarm\nLL Trip', setValue: '1.4\n1.2', actValue: '1.4\n1.2', result: '양호\n양호', note: 'AOP Auto Start' },
+                        { name: 'Control Oil Pressure', tagNo: 'PS-206\nPS-207', unit: 'kg/cm²', interlock: 'L Alarm\nLL Trip', setValue: '3.8\n3.5', actValue: '3.8\n3.5', result: '양호\n양호', note: '' },
+                        { name: 'Thrust Wear Pressure', tagNo: 'PS-204', unit: 'kg/cm²', interlock: 'HH Trip', setValue: '2.2', actValue: '2.2', result: '양호', note: '' },
+                        { name: 'Exhaust Steam Pressure', tagNo: 'PS-103\nPS-102', unit: 'kg/cm²', interlock: 'H Alarm\nHH Trip', setValue: '0.3\n0.7', actValue: '0.3\n0.7', result: '양호\n양호', note: '' },
+                        { name: 'Inlet Steam Pressure', tagNo: 'PS-101\nPS-101A\nPS-100\nPS-100A', unit: 'kg/cm²', interlock: 'L Alarm\nLL Trip\nH Alarm\nHH Trip', setValue: '16.2\n15.3\n19.8\n21.6', actValue: '16.2\n15.3\n19.8\n21.6', result: '양호\n양호\n양호\n양호', note: '' },
+                        { name: 'Turbine Casing Vibration', tagNo: 'VX-600', unit: 'mm/s', interlock: 'H Alarm\nHH Trip', setValue: '8\n10', actValue: '8\n10', result: '양호\n양호', note: '' },
+                        { name: 'Gearbox Casing Vibration', tagNo: 'VX-601', unit: 'mm/s', interlock: 'H Alarm\nHH Trip', setValue: '8\n10', actValue: '8\n10', result: '양호\n양호', note: '' },
+                        { name: 'Emergency Stop', tagNo: '-', unit: '-', interlock: 'Trip', setValue: '동작상태', actValue: '확인', result: '양호', note: '' }
+                    ];
+
+                    // PDF 내 계기교정 17개 센서 성적서 생성
+                    const rawCalibs = [
+                        { nameTag: 'Inlet Steam Temperature (TT-102)', type: 'TC_K', min: 0, max: 600, unit: '℃', offset: 0.6 },
+                        { nameTag: 'Turbine Rotor Front Bearing Temperature (RTD-200)', type: 'RTD_PT100', min: 0, max: 450, unit: '℃', offset: 1.5 },
+                        { nameTag: 'Turbine Rotor Rear Bearing Temperature (RTD-201)', type: 'RTD_PT100', min: 0, max: 450, unit: '℃', offset: -0.6 },
+                        { nameTag: 'Gearbox Pinion DE Bearing Temperature (RTD-202)', type: 'RTD_PT100', min: 0, max: 450, unit: '℃', offset: 0.8 },
+                        { nameTag: 'Gearbox Pinion NDE Bearing Temperature (RTD-203)', type: 'RTD_PT100', min: 0, max: 450, unit: '℃', offset: 0.6 },
+                        { nameTag: 'Gearbox Wheel DE Bearing Temperature (RTD-204)', type: 'RTD_PT100', min: 0, max: 450, unit: '℃', offset: 0.8 },
+                        { nameTag: 'Gearbox Wheel NDE Bearing Temperature (RTD-205)', type: 'RTD_PT100', min: 0, max: 450, unit: '℃', offset: -1.0 },
+                        { nameTag: 'Generator Winding Temperature (R1) (RTD-1)', type: 'RTD_PT100', min: 0, max: 200, unit: '℃', offset: -1.2 },
+                        { nameTag: 'Generator Winding Temperature (R2) (RTD-2)', type: 'RTD_PT100', min: 0, max: 200, unit: '℃', offset: 0.0 },
+                        { nameTag: 'Generator Winding Temperature (S1) (RTD-3)', type: 'RTD_PT100', min: 0, max: 200, unit: '℃', offset: 1.0 },
+                        { nameTag: 'Generator Winding Temperature (S2) (RTD-4)', type: 'RTD_PT100', min: 0, max: 200, unit: '℃', offset: 1.2 },
+                        { nameTag: 'Generator Winding Temperature (T1) (RTD-5)', type: 'RTD_PT100', min: 0, max: 200, unit: '℃', offset: 0.4 },
+                        { nameTag: 'Generator Winding Temperature (T2) (RTD-6)', type: 'RTD_PT100', min: 0, max: 200, unit: '℃', offset: 0.6 },
+                        { nameTag: 'Generator NDE Bearing Temperature (RTD-7)', type: 'RTD_PT100', min: 0, max: 200, unit: '℃', offset: 0.3 },
+                        { nameTag: 'Generator DE Bearing Temperature (RTD-8)', type: 'RTD_PT100', min: 0, max: 200, unit: '℃', offset: -0.2 },
+                        { nameTag: 'Turbine Casing Vibration (VX-600)', type: 'TRANS_420', min: 0, max: 12.7, unit: 'mm/s', offset: 0.06 },
+                        { nameTag: 'Gearbox Casing Vibration (VX-601)', type: 'TRANS_420', min: 0, max: 12.7, unit: 'mm/s', offset: -0.1 }
+                    ];
+
+                    this.calibItems = rawCalibs.map(c => {
+                        const item = {
+                            nameTag: c.nameTag,
+                            sensorType: c.type,
+                            rangeMin: c.min,
+                            rangeMax: c.max,
+                            unit: c.unit,
+                            offset: c.offset,
+                            points: []
+                        };
+                        this.recalculateCalib(item);
+                        return item;
+                    });
+
+                    // PDF 내 11개 압력스위치 체크시트 데이터 완벽 구축
+                    this.switchItems = [
+                        { tagNo: 'PS-202', name: 'Lube Oil Pressure Alarm', type: '압력스위치', location: 'Turbine', range: '0.2kg/cm²~2kg/cm²', manufacturer: 'Switzer', modelType: 'Pressure Switch', setVal: '1.4', preSet: '1.41', dir: '↓', unit: 'kg/cm²', contact: 'NC', resistance: '0.1 [Ω]' },
+                        { tagNo: 'PS-203', name: 'Lube Oil Pressure Trip', type: '압력스위치', location: 'Turbine', range: '0.2kg/cm²~2kg/cm²', manufacturer: 'Switzer', modelType: 'Pressure Switch', setVal: '1.2', preSet: '1.19', dir: '↓', unit: 'kg/cm²', contact: 'NC', resistance: '0.1 [Ω]' },
+                        { tagNo: 'PS-206', name: 'Control Oil Pressure Alarm', type: '압력스위치', location: 'Turbine', range: '0.6kg/cm²~6kg/cm²', manufacturer: 'Switzer', modelType: 'Pressure Switch', setVal: '3.8', preSet: '3.83', dir: '↓', unit: 'kg/cm²', contact: 'NC', resistance: '0.1 [Ω]' },
+                        { tagNo: 'PS-207', name: 'Control Oil Pressure Trip', type: '압력스위치', location: 'Turbine', range: '0.6kg/cm²~6kg/cm²', manufacturer: 'Switzer', modelType: 'Pressure Switch', setVal: '3.5', preSet: '3.51', dir: '↓', unit: 'kg/cm²', contact: 'NC', resistance: '0.1 [Ω]' },
+                        { tagNo: 'PS-204', name: 'Thrust Wear Pressure Trip', type: '압력스위치', location: 'Turbine', range: '0.4kg/cm²~4kg/cm²', manufacturer: 'Switzer', modelType: 'Pressure Switch', setVal: '2.2', preSet: '2.23', dir: '↑', unit: 'kg/cm²', contact: 'NO', resistance: '0.1 [Ω]' },
+                        { tagNo: 'PS-102', name: 'Exhaust Steam Pressure Alarm', type: '압력스위치', location: 'Turbine', range: '0.2kg/cm²~2kg/cm²', manufacturer: 'Switzer', modelType: 'Pressure Switch', setVal: '0.3', preSet: '0.29', dir: '↑', unit: 'kg/cm²', contact: 'NO', resistance: '0.1 [Ω]' },
+                        { tagNo: 'PS-103', name: 'Exhaust Steam Pressure Trip', type: '압력스위치', location: 'Turbine', range: '0.2kg/cm²~2kg/cm²', manufacturer: 'Switzer', modelType: 'Pressure Switch', setVal: '0.7', preSet: '0.72', dir: '↑', unit: 'kg/cm²', contact: 'NO', resistance: '0.1 [Ω]' },
+                        { tagNo: 'PS-101', name: 'Inlet Steam Pressure Alarm', type: '압력스위치', location: 'Turbine', range: '10kg/cm²~40kg/cm²', manufacturer: 'Switzer', modelType: 'Pressure Switch', setVal: '16.2', preSet: '15.7', dir: '↓', unit: 'kg/cm²', contact: 'NC', resistance: '0.1 [Ω]' },
+                        { tagNo: 'PS-101A', name: 'Inlet Steam Pressure Trip', type: '압력스위치', location: 'Turbine', range: '10kg/cm²~40kg/cm²', manufacturer: 'Switzer', modelType: 'Pressure Switch', setVal: '15.3', preSet: '14.9', dir: '↓', unit: 'kg/cm²', contact: 'NC', resistance: '0.1 [Ω]' },
+                        { tagNo: 'PS-100', name: 'Inlet Steam Pressure Alarm', type: '압력스위치', location: 'Turbine', range: '10kg/cm²~40kg/cm²', manufacturer: 'Switzer', modelType: 'Pressure Switch', setVal: '19.8', preSet: '20.1', dir: '↑', unit: 'kg/cm²', contact: 'NO', resistance: '0.1 [Ω]' },
+                        { tagNo: 'PS-100A', name: 'Inlet Steam Pressure Trip', type: '압력스위치', location: 'Turbine', range: '10kg/cm²~40kg/cm²', manufacturer: 'Switzer', modelType: 'Pressure Switch', setVal: '21.6', preSet: '21.0', dir: '↑', unit: 'kg/cm²', contact: 'NO', resistance: '0.1 [Ω]' }
+                    ];
+
+                    alert('구미시 환경자원화시설 증기터빈 예시 데이터가 완벽하게 로드되었습니다!');
+                },
+
+                // JSON 백업 & 복원
+                exportJSON() {
+                    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(this.$data, null, 2));
+                    const downloadAnchor = document.createElement('a');
+                    downloadAnchor.setAttribute("href", dataStr);
+                    downloadAnchor.setAttribute("download", `BSR_성적서_${this.formattedDateCompact}.json`);
+                    document.body.appendChild(downloadAnchor);
+                    downloadAnchor.click();
+                    downloadAnchor.remove();
+                },
+                importJSON(event) {
+                    const file = event.target.files[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        try {
+                            const parsed = JSON.parse(e.target.result);
+                            if (parsed.info) this.info = parsed.info;
+                            if (parsed.checkItems) this.checkItems = parsed.checkItems;
+                            if (parsed.inspectionNotes) this.inspectionNotes = parsed.inspectionNotes;
+                            if (parsed.alarmRows) this.alarmRows = parsed.alarmRows;
+                            if (parsed.calibItems) this.calibItems = parsed.calibItems;
+                            if (parsed.switchItems) this.switchItems = parsed.switchItems;
+                            alert('JSON 백업 데이터를 성공적으로 불러왔습니다!');
+                        } catch (err) {
+                            alert('올바르지 않은 JSON 파일입니다.');
+                        }
+                    };
+                    reader.readAsText(file);
+                },
+
+                // PDF 인쇄 출력 트리거
+                triggerPrint() {
+                    this.isPrinting = true;
+                    this.currentTab = 'preview';
+                    this.$nextTick(() => {
+                        setTimeout(() => {
+                            window.print();
+                            this.isPrinting = false;
+                        }, 300);
+                    });
+                }
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
